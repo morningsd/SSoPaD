@@ -1,2 +1,2 @@
-user user 1234 1
+user user 1234 0
 admin admin 4321 0

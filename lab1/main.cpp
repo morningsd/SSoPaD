@@ -19,6 +19,7 @@ using namespace std;
 #define PERMISSIONS S_IRWXU //rwx
 #define AUTH_FILE "/home/demian/study/SSoPaD/lab1/.auth" // file with metadata
 #define JOURNAL_FILE "/home/demian/study/SSoPaD/lab1/mydir/admin/journal.txt" // admin journal
+#define SECURITY_MONITOR "/home/demian/study/SSoPaD/lab1/mydir/admin/monitor.txt"
 
 
 void list_dir(const char *dir,int op_a,int op_l);
@@ -27,6 +28,7 @@ int create_file(string path, string role);
 int read_file(string path, string role);
 int check_user(string login);
 int check_pin();
+int write_to_monitor(string role, string message);
 
 string current_user;
 string current_password;
@@ -65,14 +67,14 @@ int main()
   
   while (true) {
 
-    if (check_pin() == -1) {
-      return -1;
-    }
+    //if (check_pin() == -1) {
+      //return -1;
+      //}
     
     const std::time_t now_2 = std::time(nullptr);
     const std::tm calendar_time_2 = *std::localtime( std::addressof(now_2));
     int check_minute = calendar_time_2.tm_min;
-    if (check_minute > last_check_minute) {
+    if (check_minute > last_check_minute + 2) {
       int res = check_pin();
       if (res == -1) {
 	return -1;
@@ -94,6 +96,7 @@ int main()
       cout << param << "\n";
       char new_cwd[1024];
       if (login == "user" && (strcmp(param, "admin") == 0)) {
+	write_to_monitor(current_user, "tried to access admin directory");
 	cout << "Can't change directory to " << param << "\n";
       } else if (chdir(param) != 0) {
 	cout << "Can't change directory to " << param << "\n";
@@ -132,6 +135,7 @@ int main()
 	system(result);
       } else {
 	cout << "Can't call vi " << param_str << "\n";
+	write_to_monitor(current_user, "tried to call vi on " + param_str + " file");
       }
     } else {
       cout << "Unknown command.\n";
@@ -184,6 +188,23 @@ int create_file(string path, string role) {
   
   fs.close();
 
+  return 0;
+}
+
+int write_to_monitor(string role, string message) {
+  ofstream fs(SECURITY_MONITOR, ios_base::app);
+
+  if (!fs) {
+    cout << "Cannot write logs to security monitor file\n";
+    return -1;
+  }
+  const std::time_t now_3 = std::time(nullptr);
+  const std::tm cal = *std::localtime( std::addressof(now_3));
+  int curr_month = cal.tm_mon;
+  curr_month = (curr_month + 1) % 12;
+  fs << cal.tm_mday<<"/" << curr_month << " " << cal.tm_hour <<":"<< cal.tm_min <<":"<< cal.tm_sec<< " --- " << role << " " << message << "\n";
+
+  fs.close();
   return 0;
 }
 
