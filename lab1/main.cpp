@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <string.h>
@@ -7,50 +8,79 @@
 #include <stdlib.h>
 #include <ftw.h>
 #include <fstream>
+#include <ctime>
 
 using namespace std;
 
-#define WORKING_DIRECTORY "/home/demian/study/ss/lab1" // path from which you start the program
-#define CHANGEFILE "/home/demian/study/ss/lab1/mydir"// working directory + name of the directory
+#define WORKING_DIRECTORY "/home/demian/study/SSoPaD/lab1" // path from which you start the program
+#define CHANGEFILE "/home/demian/study/SSoPaD/lab1/mydir"// working directory + name of the directory
 //#define USER_PERMISSIONS S_IRUSR|S_IXUSR // rx
-//#define ADMIN_PERMISSIONS S_IRWXU // rwx
+#define ADMIN_PERMISSIONS S_IRWXU // rwx
 #define PERMISSIONS S_IRWXU //rwx
-#define AUTH_FILE "/home/demian/study/ss/lab1/.auth" // file with metadata
+#define AUTH_FILE "/home/demian/study/SSoPaD/lab1/.auth" // file with metadata
+#define JOURNAL_FILE "/home/demian/study/SSoPaD/lab1/mydir/admin/journal.txt" // admin journal
+
 
 void list_dir(const char *dir,int op_a,int op_l);
 int rmrf(char *path);
 int create_file(string path, string role);
 int read_file(string path, string role);
+int check_user(string login);
+int check_pin();
+
+string current_user;
+string current_password;
+string current_pin;
+string current_fail_counter;
+int last_check_minute;
 
 
 int main()
 {
-  chmod(CHANGEFILE, 0);
+  chmod(CHANGEFILE, ADMIN_PERMISSIONS);
   bool logged = false;
   string login;
 
   do {
     cout << "Enter your login, please: " << "\n";
     cin >> login;
-      
-    if (login == "user") {
-      //chmod(CHANGEFILE, USER_PERMISSIONS);
+    int res = check_user(login);
+    
+    if (res == 0) {
       logged = true;
       break;
-    } else if (login == "admin") {
-      //chmod(CHANGEFILE, ADMIN_PERMISSIONS);
-      logged = true;
-      break;
-    } else {
-      cout << "Unknown login, please, try again." << "\n";
-    }
+    } else if (res == -1 || res == -2) {
+      return -1;
+    } 
+    chmod(CHANGEFILE, ADMIN_PERMISSIONS);
       
   } while (!logged);
   cout << "You are successfully logged in as " << login << "\n";
   chmod(CHANGEFILE, PERMISSIONS);
   chdir(CHANGEFILE);
+
+  const std::time_t now = std::time(nullptr);
+  const std::tm calendar_time = *std::localtime(std::addressof(now));
+  last_check_minute = calendar_time.tm_min;
   
   while (true) {
+
+    if (check_pin() == -1) {
+      return -1;
+    }
+    
+    const std::time_t now_2 = std::time(nullptr);
+    const std::tm calendar_time_2 = *std::localtime( std::addressof(now_2));
+    int check_minute = calendar_time_2.tm_min;
+    if (check_minute > last_check_minute) {
+      int res = check_pin();
+      if (res == -1) {
+	return -1;
+      }
+      last_check_minute = check_minute;
+    }
+    
+    
     char command[255];
     char param[255];
     char cwd[1024];
@@ -63,7 +93,9 @@ int main()
       cin >> param;
       cout << param << "\n";
       char new_cwd[1024];
-      if (chdir(param) != 0) {
+      if (login == "user" && (strcmp(param, "admin") == 0)) {
+	cout << "Can't change directory to " << param << "\n";
+      } else if (chdir(param) != 0) {
 	cout << "Can't change directory to " << param << "\n";
       }
       getcwd(new_cwd, sizeof(new_cwd));
@@ -84,14 +116,8 @@ int main()
       cout << cwd << "\n";
     } else if (strcmp(command, "mkdir") == 0) {
       cin >> param;
-      if (login == "user") {
-	cout << "Can't write to current directory\n";
-      } else {
-	if (mkdir(param, 0) != 0) {
-	  cout << "Can't make directory" << "\n";
-	} else if (login == "admin") {
-	  //chmod(param, ADMIN_PERMISSIONS);
-	}
+      if (mkdir(param, 0777) != 0) {
+	cout << "Can't make directory" << "\n";
       }
     } else if (strcmp(command, "vi") == 0) {
       cin >> param;
@@ -183,4 +209,75 @@ int read_file(string path, string role) {
     }
   }
   return 0;
+}
+
+int check_user(string login) {
+  fstream fs(JOURNAL_FILE, ios::in);
+  if (!fs.is_open()) {
+    return -2;
+  }
+  string user;
+  string password;
+  string pin;
+  string fail_counter;
+  while (fs) {
+    fs >> user >> password >> pin >> fail_counter;
+    if (login == user) {
+      string user_password;
+      cout << "Enter password, please: ";
+      cin >> user_password;
+      if (password == user_password) {
+	current_user = user;
+	current_password = password;
+	current_pin = pin;
+	current_fail_counter = fail_counter;
+	cout << "Access granted! You are welcome\n";
+	return 0;
+      } else {
+	cout << "Wrong password\n";
+	return -1;
+      }
+    }
+    
+  }
+  cout << "No such user exists: " << login << "\n";
+  return -1;
+}
+
+
+int check_pin() {
+  while (true) {
+    string pin;
+    cout << "Enter your pin, please: ";
+    cin >> pin;
+
+    if (stoi(current_fail_counter) > 3) {
+      cout << "Please contact administrator to continue your work\n";
+      return -1;
+    }
+    
+    if (current_pin == pin) {
+      cout << "All is good\n";
+      return 0;
+    }
+    cout << "Wrong pin\n";
+    
+    ostringstream text;
+    ifstream in_file(JOURNAL_FILE);
+
+    text << in_file.rdbuf();
+    string str = text.str();
+    string str_search = current_user + " " + current_password + " " + current_pin + " " + current_fail_counter;
+    int ctr = stoi(current_fail_counter);
+    ctr++;
+    string str_replace = current_user + " " + current_password + " " + current_pin + " " + to_string(ctr);
+    size_t pos = str.find(str_search);
+    str.replace(pos, string(str_search).length(), str_replace);
+    in_file.close();
+
+    ofstream out_file(JOURNAL_FILE);
+    out_file << str;    
+    
+    return -1;
+  }
 }

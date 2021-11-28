@@ -1,15 +1,15 @@
-CXX = clang++
-LD = clang++
+CXX = g++
+LD = g++
 
 CXXFLAGS = -Wall -Wextra -c
 
 RM = rm -f
 
 demo: main.o
-	$(CXX) $? -o $@
+	$(CXX) -pthread $? -o $@
 
 main.o: main.cpp
 	$(CXX) $(CXXFLAGS) $? -o $@
 
-clean:
-	$(RM) *.o demo
+clean:	
+	$(RM) *.o demo .auth
